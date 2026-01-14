@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <div align="center">
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
@@ -18,3 +19,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1nExB_mFWqU11JT-liBn5Ee
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+=======
+# Bahon
+A high-performance motorcycle fuel and maintenance tracker with advanced analytics and cost-per-km insights.
+>>>>>>> 744899eb59ca5cdffff7f9b4fa6258f7d312e0e8
