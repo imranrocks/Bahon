@@ -1,25 +1,17 @@
-<<<<<<< HEAD
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 🚌 Bahon - Your Digital Travel Companion
 
-# Run and deploy your AI Studio app
+[![Download APK](https://img.shields.io/badge/Download-APK-green?style=for-the-badge&logo=android)](https://github.com/imranrocks/Bahon/releases/download/v1.0/BahonV1byImranLabs.apk)
 
-This contains everything you need to run your app locally.
+> **Bahon** একটি আধুনিক ওয়েব-টু-অ্যান্ড্রয়েড অ্যাপ্লিকেশন যা ভ্রমণ বা যাতায়াত ব্যবস্থাপনাকে সহজ করার জন্য তৈরি করা হয়েছে।
 
-View your app in AI Studio: https://ai.studio/apps/drive/1nExB_mFWqU11JT-liBn5EerjfqgXBAnR
+---
 
-## Run Locally
+## 📲 সরাসরি ডাউনলোড করুন (Direct Download)
 
-**Prerequisites:**  Node.js
+আপনি যদি ডেভেলপার না হন এবং সরাসরি আপনার অ্যান্ড্রয়েড ফোনে অ্যাপটি ব্যবহার করতে চান, তবে নিচের বাটন থেকে লেটেস্ট **APK** ফাইলটি ডাউনলোড করে নিন:
 
+### [📥 Download Bahon APK](https://github.com/imranrocks/Bahon/releases/download/v1.0/BahonV1byImranLabs.apk)
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
-=======
-# Bahon
-A high-performance motorcycle fuel and maintenance tracker with advanced analytics and cost-per-km insights.
->>>>>>> 744899eb59ca5cdffff7f9b4fa6258f7d312e0e8
+*(বিঃদ্রঃ: প্লে-স্টোরের বাইরে থেকে অ্যাপ ইন্সটল করার সময় 'Install from Unknown Sources' পারমিশনটি অন করে নিতে হতে পারে।)*
+
+---
