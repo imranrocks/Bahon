@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bahon</string>
+    <string name="title_activity_main">Bahon</string>
+    <string name="package_name">com.imranlabs.bahon</string>
+    <string name="custom_url_scheme">com.imranlabs.bahon</string>
+</resources>
