@@ -14,6 +14,7 @@ export const calculateFuelStats = (logs: FuelLog[]) => {
   let worstMileage = Infinity;
   const mileageHistory: number[] = [];
 
+  // Mileage calculation logic based on full-to-full intervals
   for (let i = 1; i < sorted.length; i++) {
     const current = sorted[i];
     const prev = sorted[i - 1];
@@ -38,10 +39,23 @@ export const calculateFuelStats = (logs: FuelLog[]) => {
 
   const avgMileage = validLitersTotal > 0 ? validDistanceTotal / validLitersTotal : 0;
   const totalFuelCost = sorted.reduce((sum, log) => sum + log.totalCost, 0);
-  const totalDistance = sorted[sorted.length - 1].odo - sorted[0].odo;
-  const costPerKm = totalDistance > 0 ? totalFuelCost / totalDistance : 0;
+  
+  // Total Distance from the very first log to the very last log
+  const totalDistanceOverall = sorted[sorted.length - 1].odo - sorted[0].odo;
+  
+  // Basic fuel cost per km based on lifetime data
+  const costPerKm = totalDistanceOverall > 0 ? totalFuelCost / totalDistanceOverall : 0;
 
-  return { avgMileage, costPerKm, totalFuelCost, lastFuel, validIntervals, bestMileage, worstMileage: worstMileage === Infinity ? 0 : worstMileage, mileageHistory };
+  return { 
+    avgMileage, 
+    costPerKm, 
+    totalFuelCost, 
+    lastFuel, 
+    validIntervals, 
+    bestMileage, 
+    worstMileage: worstMileage === Infinity ? 0 : worstMileage, 
+    mileageHistory 
+  };
 };
 
 export const getAggregatedStats = (bike: Bike, costType: CostDisplayType = 'TOTAL') => {
@@ -58,8 +72,26 @@ export const getAggregatedStats = (bike: Bike, costType: CostDisplayType = 'TOTA
   );
   
   const distanceTotal = currentOdo - bike.initialOdo;
+  
+  // Logic for dynamic "Cost / KM" based on current fuel price and mileage
   let displayCostPerKm = 0;
-  if (distanceTotal > 0) {
+  const lastFuelPrice = fuelStats.lastFuel?.pricePerLiter || 0;
+  
+  if (fuelStats.avgMileage > 0 && lastFuelPrice > 0) {
+    // Current estimated fuel cost per KM = Price / Mileage
+    const currentFuelCostPerKm = lastFuelPrice / fuelStats.avgMileage;
+    
+    if (costType === 'FUEL') {
+      displayCostPerKm = currentFuelCostPerKm;
+    } else if (costType === 'FUEL_OIL') {
+      const lifetimeOilCostPerKm = distanceTotal > 0 ? oilCost / distanceTotal : 0;
+      displayCostPerKm = currentFuelCostPerKm + lifetimeOilCostPerKm;
+    } else {
+      const lifetimeMaintAndOilPerKm = distanceTotal > 0 ? (oilCost + maintCost) / distanceTotal : 0;
+      displayCostPerKm = currentFuelCostPerKm + lifetimeMaintAndOilPerKm;
+    }
+  } else if (distanceTotal > 0) {
+    // Fallback to simple lifetime average if mileage data isn't sufficient
     if (costType === 'FUEL') displayCostPerKm = fuelStats.totalFuelCost / distanceTotal;
     else if (costType === 'FUEL_OIL') displayCostPerKm = (fuelStats.totalFuelCost + oilCost) / distanceTotal;
     else displayCostPerKm = (fuelStats.totalFuelCost + oilCost + maintCost) / distanceTotal;
@@ -87,7 +119,7 @@ export const getAggregatedStats = (bike: Bike, costType: CostDisplayType = 'TOTA
     fuelCost: fuelStats.totalFuelCost,
     oilCost,
     maintenanceCost: maintCost,
-    avgMileage: fuelStats.avgMileage,
+    avgMileage: fuelStats.avgMileage, // Returned as KM/L
     mileageHistory: fuelStats.mileageHistory,
     bestMileage: fuelStats.bestMileage,
     worstMileage: fuelStats.worstMileage,
