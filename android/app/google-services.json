@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "957277842201",
+    "project_id": "bahon-imranlabs",
+    "storage_bucket": "bahon-imranlabs.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:957277842201:android:7866c3022916a166cab388",
+        "android_client_info": {
+          "package_name": "com.imranlabs.bahon"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "957277842201-e9gkid4ai1t5rij16u6ro5kc4n0cvt43.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAELyJGRKoe2XCLESfrU2EmVmlb3dKl3WI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "957277842201-e9gkid4ai1t5rij16u6ro5kc4n0cvt43.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
