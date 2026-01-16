@@ -3,11 +3,13 @@ import { Bike, AppState, FuelLog, TankStatus, ExpenseCategory, MaintenanceLog, O
 import { BikeSelector } from './components/BikeSelector';
 import { DashboardCard } from './components/DashboardCard';
 import { getAggregatedStats } from './utils/calculations';
-import { auth, db, googleProvider, signInWithPopup, signOut, onAuthStateChanged, doc, setDoc, getDoc } from './firebase';
-import { signInWithRedirect, getRedirectResult } from "firebase/auth";
+import { auth, db } from './firebase'; 
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, signOut as firebaseSignOut, signInWithCredential, GoogleAuthProvider } from "firebase/auth";
 import { saveLocalState, getLocalState } from './utils/db';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
-// এখানে ইমেজটি ইমপোর্ট করা হলো
+// Image Import
 import googleIcon from './google-icon.png'; 
 
 const CURRENCIES = [{ code: 'BDT', symbol: '৳' }, { code: 'USD', symbol: '$' }, { code: 'INR', symbol: '₹' }, { code: 'EUR', symbol: '€' }];
@@ -53,35 +55,140 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'logs' | 'stats' | 'settings'>('dashboard');
   const [showAddModal, setShowAddModal] = useState<ExpenseCategory | 'BIKE' | 'QUICK_ADD' | 'REMINDER' | null>(null);
   const [editingLog, setEditingLog] = useState<{id: string, cat: string} | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
-  const t = TRANSLATIONS[state.language];
+  const t = TRANSLATIONS[state.language as keyof typeof TRANSLATIONS];
 
+  // ✅ FIXED Google Sign-In Handler with Firebase JS SDK authentication
+  const handleSignIn = async () => {
+    if (isSigningIn) return;
+    
+    try {
+      setIsSigningIn(true);
+      console.log('🚀 Starting Google Sign-In...');
+      
+      // Step 1: Sign in with Capacitor plugin
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      console.log('✅ Capacitor Sign-In Success:', result);
+      
+      // Step 2: Get ID token from the result
+      const idToken = result.credential?.idToken;
+      
+      if (!idToken) {
+        throw new Error('No ID token received from Google Sign-In');
+      }
+      
+      console.log('🔑 Got ID Token, authenticating with Firebase JS SDK...');
+      
+      // Step 3: Sign in to Firebase JS SDK with the credential
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      
+      console.log('✅ Firebase JS SDK Sign-In Success!');
+      console.log('👤 User:', userCredential.user.email);
+      console.log('🎯 UID:', userCredential.user.uid);
+      
+      // Step 4: Update user state
+      setUser(userCredential.user);
+      
+      console.log('✅ Authentication complete! Firestore will now work.');
+      
+    } catch (error: any) {
+      console.error('❌ Google Sign-In Error:', error);
+      console.error('Error Code:', error.code);
+      console.error('Error Message:', error.message);
+      
+      if (error.code === '10' || error.message?.includes('10:')) {
+        alert("SHA-1 সমস্যা!\n\nFirebase Console এ SHA-1 যোগ করুন এবং google-services.json আপডেট করুন।");
+      } else if (error.code === 'auth/network-request-failed') {
+        alert("ইন্টারনেট সংযোগ চেক করুন");
+      } else if (error.code === '12501') {
+        console.log('User cancelled sign-in');
+      } else {
+        alert(`লগইন ব্যর্থ: ${error.message}`);
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  // ✅ Sign Out Handler
+  const handleSignOut = async () => {
+    try {
+      console.log('🚪 Signing out...');
+      await FirebaseAuthentication.signOut();
+      await firebaseSignOut(auth);
+      setUser(null);
+      console.log('✅ Sign out successful');
+    } catch (error: any) {
+      console.error('❌ Sign out error:', error);
+      setUser(null);
+    }
+  };
+
+  // ✅ Load local state and listen for auth changes
   useEffect(() => {
-    getLocalState().then(local => { if (local) setState(local); });
-    getRedirectResult(auth).catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    return onAuthStateChanged(auth, async (u) => {
+    console.log('🔄 Initializing app...');
+    
+    getLocalState().then(local => { 
+      if (local) {
+        console.log('📦 Loaded local state');
+        setState(local);
+      }
+    });
+    
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      console.log('🔐 Auth state changed:', u ? `User: ${u.email}` : 'No user');
+      
       setUser(u);
+      
       if (u) {
-        const docRef = doc(db, "users", u.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const cloudData = docSnap.data() as AppState;
-          setState(cloudData);
-          await saveLocalState(cloudData);
+        try {
+          const docRef = doc(db, "users", u.uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const cloudData = docSnap.data() as AppState;
+            console.log('☁️ Loaded cloud data');
+            setState(cloudData);
+            await saveLocalState(cloudData);
+          } else {
+            console.log('📝 No cloud data found');
+          }
+        } catch (error) {
+          console.error('❌ Error loading cloud data:', error);
         }
       }
     });
+    
+    return () => unsubscribe();
   }, []);
 
+  // ✅ Save state to local and cloud with improved logging
   useEffect(() => {
     saveLocalState(state);
+    
     if (user && state.bikes.length > 0) {
       const docRef = doc(db, "users", user.uid);
-      setDoc(docRef, state, { merge: true }).catch(console.error);
+      
+      console.log('☁️ Syncing to Firestore...');
+      console.log('Auth:', auth.currentUser ? '✅ Authenticated' : '❌ Not authenticated');
+      console.log('User ID:', user.uid);
+      console.log('Bikes:', state.bikes.length);
+      
+      setDoc(docRef, state, { merge: true })
+        .then(() => {
+          console.log('✅ Data synced to Firestore successfully!');
+          console.log('📊 Path: users/' + user.uid);
+        })
+        .catch(err => {
+          console.error('❌ Firestore sync error:', err.code, '-', err.message);
+          if (err.code === 'permission-denied') {
+            console.error('⚠️ Check Firestore security rules!');
+          }
+        });
     }
+    
     const isDark = state.theme === 'dark' || (state.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     document.documentElement.classList.toggle('dark', isDark);
   }, [state, user]);
@@ -90,44 +197,7 @@ const App: React.FC = () => {
   const stats = useMemo(() => activeBike ? getAggregatedStats(activeBike, state.costType) : null, [activeBike, state.costType]);
   const currencySymbol = CURRENCIES.find(c => c.code === state.currency)?.symbol || '৳';
 
-  const aiInsights = useMemo(() => {
-    if (!stats || !activeBike) return [];
-    const insights: { text: string; icon: string; color: string }[] = [];
-    if (stats.mileageHistory.length >= 3) {
-      const avg = stats.avgMileage;
-      const last = stats.mileageHistory[stats.mileageHistory.length - 1];
-      if (last < avg * 0.85) {
-        const p = Math.round((1 - last / avg) * 100);
-        insights.push({ text: t.mileageDropAlert.replace('{{p}}', p.toString()), icon: '⚠️', color: 'bg-red-50 text-red-600 border-red-100' });
-      }
-    }
-    if (activeBike.oilLogs.length > 0) {
-      const lastOil = activeBike.oilLogs[activeBike.oilLogs.length - 1];
-      const kmLeft = lastOil.nextChangeKm - stats.currentOdo;
-      if (kmLeft < 500) insights.push({ text: t.oilChangePrediction.replace('{{km}}', Math.max(0, kmLeft).toString()), icon: '🛢️', color: 'bg-amber-50 text-amber-600 border-amber-100' });
-    }
-    const lastMaintOdo = activeBike.maintenanceLogs.length > 0 ? Math.max(...activeBike.maintenanceLogs.map(l => l.odo)) : activeBike.initialOdo;
-    if (stats.currentOdo - lastMaintOdo > 2000) {
-      insights.push({ text: t.maintAlert, icon: '🔧', color: 'bg-blue-50 text-blue-600 border-blue-100' });
-    }
-    return insights;
-  }, [stats, activeBike, t]);
-
-  const handleSignIn = async () => {
-    try {
-      if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-        await signInWithPopup(auth, googleProvider);
-      } else {
-        await signInWithRedirect(auth, googleProvider);
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Login Error. Please check SHA-1 and Internet.");
-    }
-  };
-
-  const handleSignOut = () => signOut(auth).catch(console.error);
-
+  // --- SAVE FUNCTIONS ---
   const handleSaveFuel = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!activeBike) return;
@@ -181,6 +251,7 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, bikes: newBikes, activeBikeId: newBikes.length > 0 ? newBikes[0].id : null, hasSeenSetup: newBikes.length > 0 }));
   };
 
+  // ✅ SETUP SCREEN
   if (!state.hasSeenSetup || showAddModal === 'BIKE') {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-8 flex flex-col items-center justify-center max-w-lg mx-auto">
@@ -196,12 +267,34 @@ const App: React.FC = () => {
           setShowAddModal(null);
         }} className="w-full space-y-4 bg-white dark:bg-zinc-900 p-8 rounded-[3rem] shadow-2xl border border-zinc-100 dark:border-zinc-800">
            <h1 className="text-3xl font-black text-primary-600 italic text-center uppercase">{t.appName}</h1>
+           
            {!user && (
-             <button type="button" onClick={handleSignIn} className="w-full mb-4 bg-white dark:bg-zinc-800 border dark:border-zinc-700 py-3 rounded-2xl flex items-center justify-center gap-3 font-bold shadow-sm">
+             <button 
+               type="button" 
+               onClick={handleSignIn} 
+               disabled={isSigningIn}
+               className="w-full mb-4 bg-white dark:bg-zinc-800 border dark:border-zinc-700 py-3 rounded-2xl flex items-center justify-center gap-3 font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+             >
                <img src={googleIcon} className="w-5 h-5 object-contain" alt="Google" /> 
-               {t.signIn}
+               {isSigningIn ? 'Loading...' : t.signIn}
              </button>
            )}
+           
+           {user && (
+             <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-between">
+               <div className="flex items-center gap-2">
+                 <span className="text-sm">✅ {user.email}</span>
+               </div>
+               <button 
+                 type="button" 
+                 onClick={handleSignOut}
+                 className="text-xs text-red-600 dark:text-red-400 font-bold"
+               >
+                 {t.signOut}
+               </button>
+             </div>
+           )}
+           
            <input required name="name" placeholder="Bike Name" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
            <div className="grid grid-cols-2 gap-4">
             <input required name="model" placeholder="Model" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
@@ -217,13 +310,14 @@ const App: React.FC = () => {
     );
   }
 
+  // ✅ MAIN APP SCREEN
   return (
     <div className="min-h-screen pb-28 max-w-lg mx-auto bg-gray-50 dark:bg-zinc-950 font-sans transition-colors relative">
       <header className="sticky top-0 z-30 bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-lg px-6 pt-6 pb-2 flex flex-col gap-2">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-black text-primary-600 italic">{t.appName}</h1>
           <div className="flex items-center gap-3">
-            <div className={`px-2 py-1 rounded-full text-[8px] font-black uppercase ${user ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+            <div className={`px-2 py-1 rounded-full text-[8px] font-black uppercase ${user ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>
               {user ? t.syncActive : t.syncOff}
             </div>
             <select value={state.costType} onChange={(e) => setState(s => ({...s, costType: e.target.value as CostDisplayType}))} className="text-[10px] font-black bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-xl uppercase outline-none">
@@ -236,112 +330,220 @@ const App: React.FC = () => {
 
       <main className="px-6 space-y-6">
         {activeTab === 'dashboard' && stats && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <DashboardCard title={t.currentOdo} value={stats.currentOdo.toLocaleString()} unit="KM" icon={<span>🛣️</span>} />
-              <DashboardCard title={t.avgMileage} value={stats.avgMileage > 0 ? stats.avgMileage.toFixed(1) : '--'} unit="KM/L" icon={<span>⛽</span>} />
-              <DashboardCard title={t.costPerKm} value={stats.costPerKmTotal.toFixed(2)} unit={currencySymbol} icon={<span>💰</span>} colorClass="text-emerald-500" />
-              <DashboardCard title={t.thisMonth} value={stats.monthlySpent.toFixed(0)} unit={currencySymbol} icon={<span>📅</span>} colorClass="text-purple-500" />
-            </div>
-            {aiInsights.length > 0 && (
-               <div className="space-y-4">
-                  <h3 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">{t.smartInsights}</h3>
-                  <div className="flex overflow-x-auto gap-3 no-scrollbar pb-1">
-                    {aiInsights.map((ins, i) => (
-                      <div key={i} className={`flex-shrink-0 w-64 p-4 rounded-3xl border ${ins.color} shadow-sm flex gap-3 items-start`}>
-                        <span className="text-lg">{ins.icon}</span>
-                        <p className="text-[11px] font-bold leading-relaxed">{ins.text}</p>
-                      </div>
-                    ))}
-                  </div>
-               </div>
-            )}
-          </>
+          <div className="grid grid-cols-2 gap-4">
+            <DashboardCard title={t.currentOdo} value={stats.currentOdo.toLocaleString()} unit="KM" icon={<span>🛣️</span>} />
+            <DashboardCard title={t.avgMileage} value={stats.avgMileage > 0 ? stats.avgMileage.toFixed(1) : '--'} unit="KM/L" icon={<span>⛽</span>} />
+            <DashboardCard title={t.costPerKm} value={stats.costPerKmTotal.toFixed(2)} unit={currencySymbol} icon={<span>💰</span>} />
+            <DashboardCard title={t.thisMonth} value={stats.monthlySpent.toFixed(0)} unit={currencySymbol} icon={<span>📅</span>} />
+          </div>
         )}
 
         {activeTab === 'logs' && activeBike && (
-           <div className="space-y-3">
-             <h2 className="text-xl font-bold">{t.logs}</h2>
-             {[...activeBike.fuelLogs.map(l => ({...l, type: 'FUEL'})), ...activeBike.oilLogs.map(l => ({...l, type: 'OIL'})), ...activeBike.maintenanceLogs.map(l => ({...l, type: 'MAINT'}))]
-               .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-               .map(log => {
-                  const isFuel = log.type === 'FUEL';
-                  const isOil = log.type === 'OIL';
-                  const displayCost = isFuel ? (log as any).totalCost : isOil ? (log as any).cost : ((log as any).cost + ((log as any).laborCost || 0));
-                  const label = isFuel ? 'Fuel' : isOil ? 'Oil' : (log as any).partName;
-                  
-                  return (
-                    <div key={log.id} className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex justify-between items-center group relative overflow-hidden transition-all hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                      <div className="flex items-center gap-4">
-                         <div className="text-center w-8">
-                            <p className="text-[10px] font-black uppercase text-zinc-400 leading-none mb-1">{new Date(log.date).toLocaleDateString('en-US', {month: 'short'})}</p>
-                            <p className="text-lg font-black leading-none">{new Date(log.date).getDate()}</p>
-                         </div>
-                         <div><p className="font-bold text-sm">{log.odo.toLocaleString()} KM - {label}</p></div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                         <p className="font-black text-primary-600">-{currencySymbol}{displayCost.toFixed(0)}</p>
-                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => { setEditingLog({id: log.id, cat: log.type}); setShowAddModal(log.type === 'FUEL' ? ExpenseCategory.FUEL : log.type === 'OIL' ? ExpenseCategory.OIL : ExpenseCategory.SERVICE); }} className="p-2 text-zinc-400 hover:text-primary-500">✏️</button>
-                            <button onClick={() => deleteLog(log.id, log.type)} className="p-2 text-zinc-400 hover:text-red-500">🗑️</button>
-                         </div>
-                      </div>
-                    </div>
-                  );
-               })}
-           </div>
-        )}
+  <div className="space-y-4 pb-10">
+    <h2 className="text-xl font-black">{t.logs}</h2>
+    {[...activeBike.fuelLogs.map(l => ({...l, type: 'FUEL'})), ...activeBike.oilLogs.map(l => ({...l, type: 'OIL'})), ...activeBike.maintenanceLogs.map(l => ({...l, type: 'MAINT'}))]
+      .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map(log => {
+        const isFuel = log.type === 'FUEL';
+        return (
+          <div key={log.id} className="bg-white dark:bg-zinc-900 p-5 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
+            {/* উপরের ছোট ট্যাগ */}
+            <div className={`absolute top-0 left-0 px-4 py-1 rounded-br-2xl text-[10px] font-black uppercase ${isFuel ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
+              {isFuel ? 'Fueling' : log.type}
+            </div>
+            
+            <div className="flex justify-between items-center mt-4">
+              <div className="flex flex-col">
+                <span className="text-3xl font-black text-zinc-800 dark:text-zinc-100">
+                  {isFuel ? (log as any).liters : (log as any).cost}
+                  <small className="text-sm ml-1 font-bold text-zinc-400">{isFuel ? 'L' : currencySymbol}</small>
+                </span>
+                <span className="text-[11px] font-bold text-zinc-400 mt-1">at {log.odo.toLocaleString()} km on {log.date}</span>
+              </div>
+              
+              <div className="flex flex-col items-end gap-1">
+                <p className="font-black text-primary-600 text-lg">-{currencySymbol}{((log as any).totalCost || (log as any).cost || 0).toFixed(0)}</p>
+                <button onClick={() => deleteLog(log.id, log.type)} className="p-2 bg-zinc-50 dark:bg-zinc-800 rounded-full hover:bg-red-50 text-xs">🗑️</button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+  </div>
+)}
 
         {activeTab === 'settings' && (
            <div className="space-y-6">
               <h2 className="text-xl font-bold">{t.settings}</h2>
-              <div className="bg-white dark:bg-zinc-900 rounded-3xl divide-y divide-zinc-100 dark:divide-zinc-800 overflow-hidden shadow-sm">
-                {!user ? (
-                  <button onClick={handleSignIn} className="w-full p-6 text-left flex items-center justify-between font-bold text-primary-600">
-                    <div className="flex items-center gap-3">
-                      <img src={googleIcon} className="w-5 h-5 object-contain" alt="Google" />
-                      <span>{t.signIn}</span>
-                    </div> 
-                    <span>➜</span>
-                  </button>
-                ) : (
-                  <div className="p-6 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {user.photoURL && <img src={user.photoURL} className="w-8 h-8 rounded-full" />}
-                      <div><p className="text-xs font-bold leading-none">{user.displayName}</p><p className="text-[10px] text-zinc-500">{user.email}</p></div>
+              
+              {/* User Info */}
+              {user ? (
+                <div className="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/20">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-xs font-black uppercase text-emerald-600 dark:text-emerald-400 mb-1">Logged In</p>
+                      <p className="text-sm font-bold">{user.email}</p>
+                      {user.displayName && <p className="text-xs text-zinc-500">{user.displayName}</p>}
                     </div>
-                    <button onClick={handleSignOut} className="text-xs font-black text-red-500 uppercase">{t.signOut}</button>
+                    {user.photoURL && (
+                      <img src={user.photoURL} alt="Profile" className="w-12 h-12 rounded-full" />
+                    )}
                   </div>
-                )}
-                <div className="p-6 flex justify-between items-center"><span className="font-bold">{t.language}</span><div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl"><button onClick={() => setState(s => ({...s, language: 'bn'}))} className={`px-4 py-1.5 rounded-lg text-xs font-black ${state.language === 'bn' ? 'bg-primary-600 text-white' : 'text-zinc-500'}`}>বাংলা</button><button onClick={() => setState(s => ({...s, language: 'en'}))} className={`px-4 py-1.5 rounded-lg text-xs font-black ${state.language === 'en' ? 'bg-primary-600 text-white' : 'text-zinc-500'}`}>EN</button></div></div>
-                <div className="p-6 flex justify-between items-center"><span className="font-bold">{t.theme}</span><select value={state.theme} onChange={(e) => setState(s => ({...s, theme: e.target.value as AppTheme}))} className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-xl text-xs font-black outline-none"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></div>
-                <button onClick={deleteBike} className="w-full p-6 text-left text-red-500 font-bold">{t.deleteBike} 🗑️</button>
+                  <button 
+                    onClick={handleSignOut}
+                    className="w-full bg-red-500 text-white py-3 rounded-2xl font-bold text-sm"
+                  >
+                    {t.signOut}
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-zinc-50 dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-100 dark:border-zinc-800">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">Sign in to sync your data across devices</p>
+                  <button 
+                    onClick={handleSignIn}
+                    disabled={isSigningIn}
+                    className="w-full bg-white dark:bg-zinc-800 border dark:border-zinc-700 py-3 rounded-2xl flex items-center justify-center gap-3 font-bold shadow-sm disabled:opacity-50"
+                  >
+                    <img src={googleIcon} className="w-5 h-5 object-contain" alt="Google" /> 
+                    {isSigningIn ? 'Loading...' : t.signIn}
+                  </button>
+                </div>
+              )}
+              
+              <div className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800">
+                 <div className="p-6 flex justify-between items-center"><span className="font-bold">{t.language}</span><div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl"><button onClick={() => setState(s => ({...s, language: 'bn'}))} className={`px-4 py-1.5 rounded-lg text-xs font-black ${state.language === 'bn' ? 'bg-primary-600 text-white' : 'text-zinc-500'}`}>বাংলা</button><button onClick={() => setState(s => ({...s, language: 'en'}))} className={`px-4 py-1.5 rounded-lg text-xs font-black ${state.language === 'en' ? 'bg-primary-600 text-white' : 'text-zinc-500'}`}>EN</button></div></div>
+                 <div className="p-6 flex justify-between items-center"><span className="font-bold">{t.theme}</span><select value={state.theme} onChange={(e) => setState(s => ({...s, theme: e.target.value as AppTheme}))} className="bg-zinc-100 dark:bg-zinc-800 p-2 rounded-xl text-xs font-black outline-none"><option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option></select></div>
+                 <button onClick={deleteBike} className="w-full p-6 text-left text-red-500 font-bold">{t.deleteBike} 🗑️</button>
+              </div>
+
+              {/* Developer Info */}
+              <div className="bg-primary-50 dark:bg-primary-900/10 p-6 rounded-[2.5rem] border border-primary-100 dark:border-primary-900/20">
+                <h3 className="text-xs font-black uppercase tracking-widest text-primary-600 mb-4">{t.devInfo}</h3>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-primary-600 rounded-2xl flex items-center justify-center text-white text-xl">🚀</div>
+                  <div><p className="text-[10px] font-black uppercase text-zinc-400 mb-1">{t.builtBy}</p><p className="text-sm font-black uppercase">Imran Hossain</p></div>
+                </div>
               </div>
            </div>
         )}
       </main>
 
-      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm h-18 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-[2.5rem] border border-zinc-200 dark:border-white/10 shadow-2xl flex items-center justify-around px-4 z-40">
-        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-primary-500' : 'text-zinc-400'}`}><span className="text-xl">🏠</span><span className="text-[9px] font-black uppercase tracking-tighter">{t.dashboard}</span></button>
-        <button onClick={() => setActiveTab('logs')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'logs' ? 'text-primary-500' : 'text-zinc-400'}`}><span className="text-xl">📋</span><span className="text-[9px] font-black uppercase tracking-tighter">{t.logs}</span></button>
-        <button onClick={() => { setEditingLog(null); setShowAddModal('QUICK_ADD'); }} className="w-14 h-14 bg-primary-600 rounded-full flex flex-col items-center justify-center shadow-xl shadow-primary-500/30 text-white active:scale-90 transition-transform mb-4"><span className="text-2xl font-bold">+</span></button>
-        <button onClick={() => setActiveTab('stats')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'stats' ? 'text-primary-500' : 'text-zinc-400'}`}><span className="text-xl">📊</span><span className="text-[9px] font-black uppercase tracking-tighter">{t.stats}</span></button>
-        <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'settings' ? 'text-primary-500' : 'text-zinc-400'}`}><span className="text-xl">⚙️</span><span className="text-[9px] font-black uppercase tracking-tighter">{t.settings}</span></button>
-      </nav>
+      {/* Navigation */}
+<nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-sm h-20 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-[2.5rem] border border-zinc-200 dark:border-white/10 shadow-2xl flex items-center justify-between px-6 z-40">
+  
+  {/* Home Tab */}
+  <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center transition-all ${activeTab === 'dashboard' ? 'text-primary-500 scale-110' : 'text-zinc-400'}`}>
+    <span className="text-2xl">🏠</span>
+  </button>
 
-      {/* MODALS (Simplified for this response) */}
+  {/* History Tab (আগের মতই থাকবে) */}
+  <button onClick={() => setActiveTab('logs')} className={`flex flex-col items-center transition-all ${activeTab === 'logs' ? 'text-primary-500 scale-110' : 'text-zinc-400'}`}>
+    <span className="text-2xl">📋</span>
+  </button>
+
+  {/* Quick Add (+) বাটনটি এখন একদম মাঝখানে */}
+  <button onClick={() => setShowAddModal('QUICK_ADD')} className="w-16 h-16 bg-primary-600 rounded-full flex items-center justify-center shadow-lg text-white -translate-y-6 active:scale-90 transition-transform border-4 border-gray-50 dark:border-zinc-950">
+    <span className="text-4xl">+</span>
+  </button>
+
+  {/* Summary Tab (নতুন যোগ করা হয়েছে) */}
+  <button onClick={() => setActiveTab('stats')} className={`flex flex-col items-center transition-all ${activeTab === 'stats' ? 'text-primary-500 scale-110' : 'text-zinc-400'}`}>
+    <span className="text-2xl">📊</span>
+    <span className="text-[10px] font-bold">Summary</span>
+  </button>
+
+  {/* Settings Tab */}
+  <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center transition-all ${activeTab === 'settings' ? 'text-primary-500 scale-110' : 'text-zinc-400'}`}>
+    <span className="text-2xl">⚙️</span>
+  </button>
+       </nav>
+
+      {/* --- ALL MODALS --- */}
       {showAddModal === 'QUICK_ADD' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-md p-6">
-          <div className="w-full max-w-xs space-y-4">
-            <button onClick={() => setShowAddModal(ExpenseCategory.FUEL)} className="w-full bg-white dark:bg-zinc-900 p-6 rounded-3xl flex items-center gap-4 text-lg font-black shadow-xl">⛽ {t.addFuel}</button>
-            <button onClick={() => setShowAddModal(ExpenseCategory.OIL)} className="w-full bg-white dark:bg-zinc-900 p-6 rounded-3xl flex items-center gap-4 text-lg font-black shadow-xl">🛢️ {t.addOil}</button>
-            <button onClick={() => setShowAddModal(ExpenseCategory.SERVICE)} className="w-full bg-white dark:bg-zinc-900 p-6 rounded-3xl flex items-center gap-4 text-lg font-black shadow-xl">🔧 {t.addService}</button>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-zinc-950/80 backdrop-blur-md p-6">
+          <div className="w-full max-w-xs space-y-3">
+            <button onClick={() => setShowAddModal(ExpenseCategory.FUEL)} className="w-full bg-white dark:bg-zinc-900 p-5 rounded-3xl flex items-center gap-4 text-lg font-black shadow-xl">⛽ {t.addFuel}</button>
+            <button onClick={() => setShowAddModal(ExpenseCategory.OIL)} className="w-full bg-white dark:bg-zinc-900 p-5 rounded-3xl flex items-center gap-4 text-lg font-black shadow-xl">🛢️ {t.addOil}</button>
+            <button onClick={() => setShowAddModal(ExpenseCategory.SERVICE)} className="w-full bg-white dark:bg-zinc-900 p-5 rounded-3xl flex items-center gap-4 text-lg font-black shadow-xl">🔧 {t.addService}</button>
             <button onClick={() => setShowAddModal(null)} className="w-full text-white font-bold py-4">Close</button>
           </div>
         </div>
       )}
-      
-      {/* ... Other modals would go here ... */}
+
+      {/* FUEL FORM */}
+      {showAddModal === ExpenseCategory.FUEL && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/90 p-6 overflow-y-auto">
+          <form onSubmit={handleSaveFuel} className="bg-white dark:bg-zinc-900 w-full max-w-md p-8 rounded-[2.5rem] space-y-4">
+            <h2 className="text-xl font-black uppercase text-primary-600 mb-4">⛽ {t.addFuel}</h2>
+            <input required name="odo" type="number" placeholder="32800" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" defaultValue={stats?.currentOdo} />
+            <div className="grid grid-cols-2 gap-4">
+              <input required name="liters" type="number" step="0.01" placeholder="Liters" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+              <input required name="price" type="number" step="0.1" placeholder="Price/L" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+            </div>
+            <input name="station" placeholder="Fuel Station Name" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+            <input required name="date" type="date" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" defaultValue={new Date().toISOString().split('T')[0]} />
+           <select name="status" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none">
+  {/* ১. এটি তখন দিবেন যখন আগে ফুল করেছিলেন এবং এবারও ফুল করলেন */}
+  <option value={TankStatus.FULL}>Full Tank (ফুল ট্যাংক)</option>
+  
+  {/* ২. এটি তখন দিবেন যখন প্রথমবার ফুল করছেন বা আগে কত ছিল জানেন না */}
+  <option value={TankStatus.FULL_UNKNOWN_PREVIOUS}>Full Tank (আগে কিছু ছিলো)</option>
+  
+  {/* ৩. এটি তখন দিবেন যখন শুধু কিছু টাকার তেল নিয়েছেন (ট্যাংক ফুল করেননি) */}
+  <option value={TankStatus.PARTIAL}>Partial (অল্প তেল)</option>
+          </select>
+            <div className="flex gap-3 pt-4">
+              <button type="button" onClick={() => setShowAddModal(null)} className="flex-1 py-4 font-black">{t.cancel}</button>
+              <button type="submit" className="flex-1 bg-primary-600 text-white py-4 rounded-2xl font-black">{t.save}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* OIL FORM */}
+      {showAddModal === ExpenseCategory.OIL && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/90 p-6 overflow-y-auto">
+          <form onSubmit={handleSaveOil} className="bg-white dark:bg-zinc-900 w-full max-w-md p-8 rounded-[2.5rem] space-y-4">
+            <h2 className="text-xl font-black uppercase text-primary-600 mb-4">🛢️ {t.addOil}</h2>
+            <input required name="odo" type="number" placeholder="Odometer" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" defaultValue={stats?.currentOdo} />
+            <input required name="brand" placeholder="Oil Brand" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+            <div className="grid grid-cols-2 gap-4">
+              <input required name="quantity" type="number" step="0.1" placeholder="Liters" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+              <input required name="cost" type="number" placeholder="Cost" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+            </div>
+            <select name="grade" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none">
+                <option value={OilGrade.MINERAL}>{t.oilMineral}</option>
+                <option value={OilGrade.SEMI_SYNTHETIC}>{t.oilSemi}</option>
+                <option value={OilGrade.FULL_SYNTHETIC}>{t.oilFull}</option>
+            </select>
+            <input required name="date" type="date" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" defaultValue={new Date().toISOString().split('T')[0]} />
+            <div className="flex gap-3 pt-4">
+              <button type="button" onClick={() => setShowAddModal(null)} className="flex-1 py-4 font-black">{t.cancel}</button>
+              <button type="submit" className="flex-1 bg-primary-600 text-white py-4 rounded-2xl font-black">{t.save}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* SERVICE / MAINTENANCE FORM */}
+      {showAddModal === ExpenseCategory.SERVICE && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/90 p-6 overflow-y-auto">
+          <form onSubmit={handleSaveMaint} className="bg-white dark:bg-zinc-900 w-full max-w-md p-8 rounded-[2.5rem] space-y-4">
+            <h2 className="text-xl font-black uppercase text-primary-600 mb-4">🔧 {t.addService}</h2>
+            <input required name="odo" type="number" placeholder="Odometer" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" defaultValue={stats?.currentOdo} />
+            <input required name="partName" placeholder="What was serviced? (e.g. Chain, Brake)" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+            <div className="grid grid-cols-2 gap-4">
+              <input required name="cost" type="number" placeholder="Parts Cost" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+              <input required name="laborCost" type="number" placeholder="Labor Cost" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+            </div>
+            <input required name="date" type="date" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" defaultValue={new Date().toISOString().split('T')[0]} />
+            <div className="flex gap-3 pt-4">
+              <button type="button" onClick={() => setShowAddModal(null)} className="flex-1 py-4 font-black">{t.cancel}</button>
+              <button type="submit" className="flex-1 bg-primary-600 text-white py-4 rounded-2xl font-black">{t.save}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

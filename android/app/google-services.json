@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "957277842201-o939tko4abgffqtqq9icr3hlb5sujc1p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.imranlabs.bahon",
+            "certificate_hash": "958419ba5b33c653770554b8d43052438aa9994a"
+          }
+        },
+        {
           "client_id": "957277842201-e9gkid4ai1t5rij16u6ro5kc4n0cvt43.apps.googleusercontent.com",
           "client_type": 3
         }

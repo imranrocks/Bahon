@@ -1,57 +1,50 @@
-
 import { Bike, FuelLog, TankStatus, CostDisplayType, OilGrade } from '../types';
 
 export const calculateFuelStats = (logs: FuelLog[]) => {
-  if (logs.length < 2) return { avgMileage: 0, costPerKm: 0, totalFuelCost: 0, lastFuel: null, validIntervals: 0, bestMileage: 0, worstMileage: 0, mileageHistory: [] as number[] };
+  // কমপক্ষে ২ টি লগ না থাকলে মাইলেজ আসবে না
+  if (logs.length < 2) {
+    return { avgMileage: 0, costPerKm: 0, totalFuelCost: 0, lastFuel: null, validIntervals: 0, bestMileage: 0, worstMileage: 0, mileageHistory: [] as number[] };
+  }
 
+  // ওডোমিটার অনুযায়ী ডাটা সাজানো
   const sorted = [...logs].sort((a, b) => a.odo - b.odo);
   const lastFuel = sorted[sorted.length - 1];
-  
-  let validDistanceTotal = 0;
-  let validLitersTotal = 0;
-  let validIntervals = 0;
+  const firstFuel = sorted[0];
+
+  // ১. মোট দূরত্ব (শেষ ওডো - প্রথম ওডো)
+  const totalDistance = lastFuel.odo - firstFuel.odo;
+
+  // ২. মোট তেল (প্রথমবারের এন্ট্রি বাদে বাকি সবগুলোর যোগফল)
+  // কারণ প্রথমবার তেল ভরার সময় আমরা আগের হিসাব জানি না, ১ম ওডো থেকে ২য় ওডোর দূরত্ব ২য় বারের তেলেই চলেছে।
+  const totalLiters = sorted.slice(1).reduce((sum, log) => sum + log.liters, 0);
+
+  // ৩. মোট খরচ
+  const totalFuelCost = sorted.reduce((sum, log) => sum + log.totalCost, 0);
+
+  // গড় মাইলেজ বের করা (যেকোনো এন্ট্রি হোক না কেন)
+  const avgMileage = totalLiters > 0 ? totalDistance / totalLiters : 0;
+
+  // বেস্ট এবং ওর্স্ট মাইলেজ (আগের লজিক ঠিক রাখার জন্য ইন্টারভ্যাল দিয়ে চেক করা)
   let bestMileage = 0;
   let worstMileage = Infinity;
   const mileageHistory: number[] = [];
 
-  // Mileage calculation logic based on full-to-full intervals
   for (let i = 1; i < sorted.length; i++) {
-    const current = sorted[i];
-    const prev = sorted[i - 1];
-    
-    const currentIsFull = current.tankStatus !== TankStatus.PARTIAL;
-    const prevIsFull = prev.tankStatus !== TankStatus.PARTIAL;
-
-    if (currentIsFull && prevIsFull) {
-      const dist = current.odo - prev.odo;
-      if (dist > 0) {
-        const intervalMileage = dist / current.liters;
-        validDistanceTotal += dist;
-        validLitersTotal += current.liters;
-        validIntervals++;
-        mileageHistory.push(intervalMileage);
-        
-        if (intervalMileage > bestMileage) bestMileage = intervalMileage;
-        if (intervalMileage < worstMileage) worstMileage = intervalMileage;
-      }
+    const dist = sorted[i].odo - sorted[i - 1].odo;
+    if (dist > 0 && sorted[i].liters > 0) {
+      const currentMPG = dist / sorted[i].liters;
+      mileageHistory.push(currentMPG);
+      if (currentMPG > bestMileage) bestMileage = currentMPG;
+      if (currentMPG < worstMileage) worstMileage = currentMPG;
     }
   }
 
-  const avgMileage = validLitersTotal > 0 ? validDistanceTotal / validLitersTotal : 0;
-  const totalFuelCost = sorted.reduce((sum, log) => sum + log.totalCost, 0);
-  
-  // Total Distance from the very first log to the very last log
-  const totalDistanceOverall = sorted[sorted.length - 1].odo - sorted[0].odo;
-  
-  // Basic fuel cost per km based on lifetime data
-  const costPerKm = totalDistanceOverall > 0 ? totalFuelCost / totalDistanceOverall : 0;
-
   return { 
     avgMileage, 
-    costPerKm, 
+    costPerKm: totalDistance > 0 ? totalFuelCost / totalDistance : 0, 
     totalFuelCost, 
     lastFuel, 
-    validIntervals, 
+    validIntervals: sorted.length - 1, 
     bestMileage, 
     worstMileage: worstMileage === Infinity ? 0 : worstMileage, 
     mileageHistory 
@@ -73,12 +66,11 @@ export const getAggregatedStats = (bike: Bike, costType: CostDisplayType = 'TOTA
   
   const distanceTotal = currentOdo - bike.initialOdo;
   
-  // Logic for dynamic "Cost / KM" based on current fuel price and mileage
   let displayCostPerKm = 0;
   const lastFuelPrice = fuelStats.lastFuel?.pricePerLiter || 0;
   
+  // আপনার রিকোয়েস্ট অনুযায়ী মাইলেজের ওপর বেস করে Cost/KM
   if (fuelStats.avgMileage > 0 && lastFuelPrice > 0) {
-    // Current estimated fuel cost per KM = Price / Mileage
     const currentFuelCostPerKm = lastFuelPrice / fuelStats.avgMileage;
     
     if (costType === 'FUEL') {
@@ -91,16 +83,17 @@ export const getAggregatedStats = (bike: Bike, costType: CostDisplayType = 'TOTA
       displayCostPerKm = currentFuelCostPerKm + lifetimeMaintAndOilPerKm;
     }
   } else if (distanceTotal > 0) {
-    // Fallback to simple lifetime average if mileage data isn't sufficient
-    if (costType === 'FUEL') displayCostPerKm = fuelStats.totalFuelCost / distanceTotal;
-    else if (costType === 'FUEL_OIL') displayCostPerKm = (fuelStats.totalFuelCost + oilCost) / distanceTotal;
-    else displayCostPerKm = (fuelStats.totalFuelCost + oilCost + maintCost) / distanceTotal;
+    // যদি মাইলেজ না পাওয়া যায় তবে লাইফটাইম গড় দেখানো হবে
+    const fuelCost = fuelStats.totalFuelCost;
+    if (costType === 'FUEL') displayCostPerKm = fuelCost / distanceTotal;
+    else if (costType === 'FUEL_OIL') displayCostPerKm = (fuelCost + oilCost) / distanceTotal;
+    else displayCostPerKm = (fuelCost + oilCost + maintCost) / distanceTotal;
   }
 
   // AI Station Logic
   const stationStats: Record<string, { dist: number, lit: number }> = {};
   bike.fuelLogs.forEach((log, i) => {
-    if (i > 0 && log.stationName && log.tankStatus !== TankStatus.PARTIAL && bike.fuelLogs[i-1].tankStatus !== TankStatus.PARTIAL) {
+    if (i > 0 && log.stationName) {
         const dist = log.odo - bike.fuelLogs[i-1].odo;
         if (!stationStats[log.stationName]) stationStats[log.stationName] = { dist: 0, lit: 0 };
         stationStats[log.stationName].dist += dist;
@@ -119,7 +112,7 @@ export const getAggregatedStats = (bike: Bike, costType: CostDisplayType = 'TOTA
     fuelCost: fuelStats.totalFuelCost,
     oilCost,
     maintenanceCost: maintCost,
-    avgMileage: fuelStats.avgMileage, // Returned as KM/L
+    avgMileage: fuelStats.avgMileage,
     mileageHistory: fuelStats.mileageHistory,
     bestMileage: fuelStats.bestMileage,
     worstMileage: fuelStats.worstMileage,
