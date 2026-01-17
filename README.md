@@ -1,6 +1,6 @@
 # 🚌 Bahon - Your Digital Travel Companion
 
-[![Download APK](https://img.shields.io/badge/Download-APK-green?style=for-the-badge&logo=android)](https://github.com/imranrocks/Bahon/releases/download/v1.0/bahonv1betaReleasebyImranLabs.apk)
+[![Download APK](https://img.shields.io/badge/Download-APK-green?style=for-the-badge&logo=android)](https://github.com/imranrocks/Bahon/releases/download/v1.0/bahonv1betaSecondReleasebyImranLabs.apk)
 
 > **Bahon** একটি আধুনিক ওয়েব-টু-অ্যান্ড্রয়েড অ্যাপ্লিকেশন যা ভ্রমণ বা যাতায়াত ব্যবস্থাপনাকে সহজ করার জন্য তৈরি করা হয়েছে।
 
@@ -10,7 +10,7 @@
 
 আপনি যদি ডেভেলপার না হন এবং সরাসরি আপনার অ্যান্ড্রয়েড ফোনে অ্যাপটি ব্যবহার করতে চান, তবে নিচের বাটন থেকে লেটেস্ট **APK** ফাইলটি ডাউনলোড করে নিন:
 
-### [📥 Download Bahon APK](https://github.com/imranrocks/Bahon/releases/download/v1.0/bahonv1betaReleasebyImranLabs.apk)
+### [📥 Download Bahon APK](https://github.com/imranrocks/Bahon/releases/download/v1.0/bahonv1betaSecondReleasebyImranLabs.apk)
 
 *(বিঃদ্রঃ: প্লে-স্টোরের বাইরে থেকে অ্যাপ ইন্সটল করার সময় 'Install from Unknown Sources' পারমিশনটি অন করে নিতে হতে পারে।)*
 

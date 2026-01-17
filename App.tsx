@@ -52,7 +52,32 @@ const App: React.FC = () => {
     bikes: [], activeBikeId: null, darkMode: false, theme: 'system', language: 'bn', currency: 'BDT', hasSeenSetup: false, costType: 'TOTAL'
   });
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'logs' | 'stats' | 'settings'>('dashboard');
+  // summary যোগ করা হয়েছে
+const [activeTab, setActiveTab] = useState<'dashboard' | 'logs' | 'stats' | 'settings'>('dashboard');
+
+const CURRENT_VERSION = 2; // এখনকার অ্যাপে এটি ১ থাকবে, পরের বার ২ করে দেবেন
+
+const [updateInfo, setUpdateInfo] = useState<{version: number, url: string} | null>(null);
+
+useEffect(() => {
+  const checkUpdate = async () => {
+    try {
+      const docRef = doc(db, 'system_config', 'app_update');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        // যদি ডাটাবেসের ভার্সন (২) বর্তমান ভার্সন (১) এর চেয়ে বড় হয়
+        if (data.latestVersion > CURRENT_VERSION) {
+          setUpdateInfo({ version: data.latestVersion, url: data.downloadUrl });
+        }
+      }
+    } catch (err) {
+      console.error("Update check error:", err);
+    }
+  };
+  checkUpdate();
+}, []);
+
   const [showAddModal, setShowAddModal] = useState<ExpenseCategory | 'BIKE' | 'QUICK_ADD' | 'REMINDER' | null>(null);
   const [editingLog, setEditingLog] = useState<{id: string, cat: string} | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -338,6 +363,157 @@ const App: React.FC = () => {
           </div>
         )}
 
+{activeTab === 'dashboard' && activeBike && stats && (
+  <div className="mt-8 px-1 pb-20 space-y-6">
+
+
+    {/* ২. Bahon AI Insights Section */}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between px-1">
+        <h3 className="text-xl font-black italic text-zinc-800 dark:text-zinc-100 uppercase flex items-center gap-2">
+          Bahon AI <span className="text-sm not-italic opacity-50">✨ Insights</span>
+        </h3>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        
+        {/* মবিল পরিবর্তনের প্রেডিকশন */}
+        {activeBike.oilLogs && activeBike.oilLogs.length > 0 && (() => {
+          const lastOil = [...activeBike.oilLogs].sort((a, b) => b.odo - a.odo)[0];
+          const remainingKm = lastOil.nextChangeKm - (stats.currentOdo || 0);
+          const isCritical = remainingKm <= 200;
+
+          return (
+            <div className={`p-5 rounded-[2rem] border transition-all ${
+              isCritical ? 'bg-red-50 border-red-100 dark:bg-red-900/10 dark:border-red-900/30' : 'bg-white border-zinc-100 dark:bg-zinc-900 dark:border-zinc-800 shadow-sm'
+            }`}>
+              <p className={`text-[10px] font-black uppercase ${isCritical ? 'text-red-600' : 'text-blue-600'}`}>Oil Prediction</p>
+              <p className="font-black text-sm mt-1">
+                {remainingKm <= 0 
+                  ? `মবিল পরিবর্তনের সময় পার হয়ে গেছে! (${Math.abs(remainingKm)} KM ওভার)` 
+                  : `পরবর্তী পরিবর্তন: ~${lastOil.nextChangeKm} KM (বাকি ${remainingKm} KM)`}
+              </p>
+            </div>
+          );
+        })()}
+
+        {/* সেরা ফুয়েল পাম্প এনালাইসিস */}
+        {stats.stationStats && Object.keys(stats.stationStats).length > 0 && (() => {
+          const bestPump = Object.entries(stats.stationStats)
+            .sort((a, b) => (b[1].dist / b[1].lit) - (a[1].dist / a[1].lit))[0][0];
+          
+          return (
+            <div className="bg-emerald-50 dark:bg-emerald-900/10 p-5 rounded-[2rem] border border-emerald-100 dark:border-emerald-900/20 shadow-sm">
+              <p className="text-[10px] font-black text-emerald-600 uppercase">Station Memory</p>
+              <p className="font-black text-sm mt-1 text-zinc-800 dark:text-zinc-200">
+                সেরা মাইলেজ পাচ্ছেন: <span className="underline decoration-emerald-500/50">{bestPump}</span> থেকে
+              </p>
+            </div>
+          );
+        })()}
+
+        {/* ৩. মাইলেজ ড্রপ সতর্কতা */}
+        {stats.mileageHistory && stats.mileageHistory.length > 1 && (() => {
+          const latestMileage = stats.mileageHistory[stats.mileageHistory.length - 1];
+          const isMileageLow = latestMileage < stats.avgMileage * 0.9;
+          if (!isMileageLow) return null;
+
+          return (
+            <div className="bg-orange-50 dark:bg-orange-900/10 p-5 rounded-[2rem] border border-orange-100 dark:border-orange-900/20 flex items-start gap-3 shadow-sm">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <p className="text-[10px] font-black text-orange-600 uppercase">Mileage Alert</p>
+                <p className="font-black text-sm text-zinc-800 dark:text-zinc-200">
+                  মাইলেজ ১০% কমেছে! টায়ার প্রেশার বা এয়ার ফিল্টার চেক করুন।
+                </p>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ৪. মোস্ট এক্সপেন্সিভ পার্ট (নতুন AI ইনসাইট) */}
+        {stats.mostExpensivePart && (
+          <div className="bg-purple-50 dark:bg-purple-900/10 p-5 rounded-[2rem] border border-purple-100 dark:border-purple-900/20 shadow-sm">
+            <p className="text-[10px] font-black text-purple-600 uppercase">Expense Insight</p>
+            <p className="font-black text-sm mt-1 text-zinc-800 dark:text-zinc-200">
+              সবচেয়ে দামি পার্টস: {stats.mostExpensivePart.partName} ({currencySymbol}{stats.mostExpensivePart.cost + stats.mostExpensivePart.laborCost})
+            </p>
+          </div>
+        )}
+
+        {/* কোনো ডাটা না থাকলে ডিফল্ট মেসেজ */}
+        {(!activeBike.oilLogs?.length && !Object.keys(stats?.stationStats || {}).length) && (
+          <div className="p-8 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] text-center text-zinc-400 font-bold text-sm">
+            পর্যাপ্ত ডাটা নেই। কিছু লগ যোগ করলে AI ইনসাইট দেখাবে।
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+         {/* Summary Tab Section */}
+{activeTab === 'stats' && activeBike && stats && (
+  <div className="mt-4 px-4 pb-24 space-y-6">
+    <h3 className="text-xl font-black text-zinc-800 dark:text-zinc-100 uppercase italic">
+      Expense Summary 📊
+    </h3>
+
+    {/* মাসিক খরচের কার্ডটি এখন এখানে */}
+    <div className="bg-zinc-900 dark:bg-black text-white p-7 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+      <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/5 rounded-full blur-2xl"></div>
+      
+      <p className="text-[10px] font-black opacity-50 uppercase tracking-[0.2em]">Monthly Overview</p>
+      <h2 className="text-5xl font-black mt-2 tracking-tighter">
+        <span className="text-2xl font-bold opacity-60 mr-1">{currencySymbol}</span>
+        {stats.monthlySpent?.toLocaleString() || 0}
+      </h2>
+      
+      <div className="flex flex-wrap gap-2 mt-6">
+        <div className="bg-white/10 backdrop-blur-md border border-white/5 px-4 py-2 rounded-2xl">
+          <p className="text-[9px] uppercase opacity-40 font-bold">Fuel</p>
+          <p className="text-xs font-black">{currencySymbol}{stats.fuelCost || 0}</p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-md border border-white/5 px-4 py-2 rounded-2xl">
+          <p className="text-[9px] uppercase opacity-40 font-bold">Oil</p>
+          <p className="text-xs font-black">{currencySymbol}{stats.oilCost || 0}</p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-md border border-white/5 px-4 py-2 rounded-2xl">
+          <p className="text-[9px] uppercase opacity-40 font-bold">Service</p>
+          <p className="text-xs font-black">{currencySymbol}{stats.maintenanceCost || 0}</p>
+        </div>
+      </div>
+    </div>
+
+    {/* ভবিষ্যতে এখানে চার্ট বা গ্রাফ যোগ করা যাবে */}
+    <div className="p-8 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] text-center">
+       <p className="text-zinc-400 font-bold text-sm">বিস্তারিত চার্ট এবং গ্রাফ শীঘ্রই আসছে...</p>
+    </div>
+  </div>
+)}
+
+{/* --- Dashboard Update Alert --- */}
+{activeTab === 'dashboard' && updateInfo && (
+  <div className="px-4 mb-4">
+    <button 
+      onClick={() => window.open(updateInfo.url, '_blank')}
+      className="w-full bg-red-600 active:scale-95 transition-all text-white p-5 rounded-[2.5rem] font-black text-xs uppercase flex items-center justify-between shadow-xl shadow-red-500/20 group animate-bounce"
+    >
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-3 w-3">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+        </span>
+        <div className="text-left leading-tight">
+          <p className="opacity-70 text-[9px] font-bold">New Update Available</p>
+          <p className="text-sm font-black">GET VERSION v{updateInfo.version}</p>
+        </div>
+      </div>
+      <span className="bg-white/20 px-4 py-2 rounded-2xl text-[10px]">INSTALL</span>
+    </button>
+  </div>
+)}
+
         {activeTab === 'logs' && activeBike && (
   <div className="space-y-4 pb-10">
     <h2 className="text-xl font-black">{t.logs}</h2>
@@ -416,18 +592,54 @@ const App: React.FC = () => {
                  <button onClick={deleteBike} className="w-full p-6 text-left text-red-500 font-bold">{t.deleteBike} 🗑️</button>
               </div>
 
-              {/* Developer Info */}
-              <div className="bg-primary-50 dark:bg-primary-900/10 p-6 rounded-[2.5rem] border border-primary-100 dark:border-primary-900/20">
-                <h3 className="text-xs font-black uppercase tracking-widest text-primary-600 mb-4">{t.devInfo}</h3>
+     {/* Developer Info - Arizo Imran Custom Design */}
+          <div className="relative mt-8 group">
+            {/* গ্লো ইফেক্ট */}
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-[2.5rem] blur-xl opacity-10 group-hover:opacity-25 transition-opacity duration-500"></div>
+            
+            <div className="relative bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-6 rounded-[2.5rem] overflow-hidden shadow-sm">
+              <div className="flex flex-col gap-5">
+                
+                {/* টপ সেকশন: নাম এবং ল্যাব */}
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-primary-600 rounded-2xl flex items-center justify-center text-white text-xl">🚀</div>
-                  <div><p className="text-[10px] font-black uppercase text-zinc-400 mb-1">{t.builtBy}</p><p className="text-sm font-black uppercase">Imran Hossain</p></div>
+                  <div className="w-14 h-14 bg-gradient-to-br from-zinc-800 to-black dark:from-zinc-700 dark:to-zinc-800 rounded-2xl flex items-center justify-center text-white text-xl shadow-lg transform group-hover:-rotate-6 transition-transform duration-500">
+                    🚀
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400 mb-0.5">
+                      Built By Imran Labs
+                    </p>
+                    <h3 className="text-xl font-black text-zinc-900 dark:text-white uppercase italic tracking-tight">
+                      Arizo Imran
+                    </h3>
+                  </div>
+                </div>
+
+                {/* ফেসবুক বাটন */}
+                <button 
+                  onClick={() => window.open('https://www.facebook.com/arizoimran', '_blank')}
+                  className="w-full bg-[#1877F2] hover:bg-[#1877F2]/90 active:scale-95 transition-all text-white py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 shadow-lg shadow-blue-500/20"
+                >
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                  </svg>
+                  Connect on Facebook
+                </button>
+
+                {/* ভার্সন ব্যাজ */}
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                    Production Ready • v{CURRENT_VERSION}.0
+                  </p>
                 </div>
               </div>
-           </div>
-        )}
-      </main>
-
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+    
       {/* Navigation */}
 <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-sm h-20 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-[2.5rem] border border-zinc-200 dark:border-white/10 shadow-2xl flex items-center justify-between px-6 z-40">
   
