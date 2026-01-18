@@ -8,6 +8,15 @@ import { doc, setDoc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut as firebaseSignOut, signInWithCredential, GoogleAuthProvider } from "firebase/auth";
 import { saveLocalState, getLocalState } from './utils/db';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import Lottie from "lottie-react";
+import deleteAnim from "./delete.json";
+import gearsAnim from "./gears.json";
+import ghostAnim from "./ghost.json";
+import successAnim from "./success.json";
+import { PushNotifications } from '@capacitor/push-notifications';
+import { useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 
 // Image Import
 import googleIcon from './google-icon.png'; 
@@ -47,6 +56,14 @@ const TRANSLATIONS = {
   }
 };
 
+const triggerHaptic = async () => {
+  try {
+    await Haptics.impact({ style: ImpactStyle.Medium });
+  } catch (e) {
+    console.log("Haptics only works on mobile");
+  }
+};
+
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     bikes: [], activeBikeId: null, darkMode: false, theme: 'system', language: 'bn', currency: 'BDT', hasSeenSetup: false, costType: 'TOTAL'
@@ -55,6 +72,49 @@ const App: React.FC = () => {
   // summary যোগ করা হয়েছে
 const [activeTab, setActiveTab] = useState<'dashboard' | 'logs' | 'stats' | 'settings'>('dashboard');
 
+useEffect(() => {
+    // ১. সাউন্ড নিশ্চিত করতে অ্যান্ড্রয়েড চ্যানেল তৈরি করা
+    const createNotificationChannel = async () => {
+      if (Capacitor.getPlatform() === 'android') {
+        await PushNotifications.createChannel({
+          id: 'fcm_default_channel', // এই আইডিটি ফায়ারবেস কনসোলেও ব্যবহার করা যায়
+          name: 'Default',
+          description: 'General Notifications',
+          importance: 5, // ৫ মানে সর্বোচ্চ গুরুত্ব (সাউন্ড হবে)
+          visibility: 1,
+          vibration: true,
+        });
+      }
+    };
+
+    createNotificationChannel();
+
+    // ২. রেজিস্ট্রেশন সফল হলে টোকেন পাওয়া
+    PushNotifications.addListener('registration', (token) => {
+      console.log('Push registration success, token: ' + token.value);
+    });
+
+    // ৩. রেজিস্ট্রেশন এরর হ্যান্ডেল করা
+    PushNotifications.addListener('registrationError', (error) => {
+      console.error('Registration error: ', error);
+    });
+
+    // ৪. অ্যাপ ওপেন থাকা অবস্থায় নোটিফিকেশন আসলে কি হবে
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      // আপনি চাইলে এখানে alert দিতে পারেন, অথবা কাস্টম পপ-আপ দেখাতে পারেন
+      console.log('Notification received while app open:', notification);
+      alert(`${notification.title}\n${notification.body}`);
+    });
+
+    // ৫. পারমিশন চাওয়া এবং রেজিস্ট্রেশন করা
+    PushNotifications.requestPermissions().then(result => {
+      if (result.receive === 'granted') {
+        PushNotifications.register();
+      }
+    });
+
+  }, []);
+  
 const CURRENT_VERSION = 2; // এখনকার অ্যাপে এটি ১ থাকবে, পরের বার ২ করে দেবেন
 
 const [updateInfo, setUpdateInfo] = useState<{version: number, url: string} | null>(null);
@@ -81,6 +141,8 @@ useEffect(() => {
   const [showAddModal, setShowAddModal] = useState<ExpenseCategory | 'BIKE' | 'QUICK_ADD' | 'REMINDER' | null>(null);
   const [editingLog, setEditingLog] = useState<{id: string, cat: string} | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const t = TRANSLATIONS[state.language as keyof typeof TRANSLATIONS];
 
@@ -154,7 +216,11 @@ useEffect(() => {
   // ✅ Load local state and listen for auth changes
   useEffect(() => {
     console.log('🔄 Initializing app...');
-    
+   
+    setTimeout(() => {
+  setIsInitialLoading(false);
+}, 3000);
+
     getLocalState().then(local => { 
       if (local) {
         console.log('📦 Loaded local state');
@@ -235,6 +301,12 @@ useEffect(() => {
       stationName: f.get('station') as string, tankStatus: st, isMileageValid: st !== TankStatus.PARTIAL
     };
     setState(prev => ({ ...prev, bikes: prev.bikes.map(b => b.id === activeBike.id ? { ...b, fuelLogs: editingLog ? b.fuelLogs.map(l => l.id === editingLog.id ? newLog : l) : [...b.fuelLogs, newLog].sort((x, y) => x.odo - y.odo) } : b) }));
+    
+    // এনিমেশন এবং ভাইব্রেশন
+    triggerHaptic();
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 2000);
+    
     setShowAddModal(null); setEditingLog(null);
   };
 
@@ -248,6 +320,12 @@ useEffect(() => {
       brand: f.get('brand') as string, grade, quantity: Number(f.get('quantity')), cost: Number(f.get('cost')), nextChangeKm: odo + lifeMap[grade]
     };
     setState(prev => ({ ...prev, bikes: prev.bikes.map(b => b.id === activeBike.id ? { ...b, oilLogs: editingLog ? b.oilLogs.map(l => l.id === editingLog.id ? newLog : l) : [...b.oilLogs, newLog] } : b) }));
+    
+    // এনিমেশন এবং ভাইব্রেশন
+    triggerHaptic();
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 2000);
+    
     setShowAddModal(null); setEditingLog(null);
   };
 
@@ -261,6 +339,12 @@ useEffect(() => {
       cost: Number(f.get('cost')), laborCost: Number(f.get('laborCost')),
     };
     setState(prev => ({ ...prev, bikes: prev.bikes.map(b => b.id === activeBike.id ? { ...b, maintenanceLogs: editingLog ? b.maintenanceLogs.map(l => l.id === editingLog.id ? newLog : l) : [...b.maintenanceLogs, newLog] } : b) }));
+    
+    // এনিমেশন এবং ভাইব্রেশন
+    triggerHaptic();
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 2000);
+    
     setShowAddModal(null); setEditingLog(null);
   };
 
@@ -293,33 +377,37 @@ useEffect(() => {
         }} className="w-full space-y-4 bg-white dark:bg-zinc-900 p-8 rounded-[3rem] shadow-2xl border border-zinc-100 dark:border-zinc-800">
            <h1 className="text-3xl font-black text-primary-600 italic text-center uppercase">{t.appName}</h1>
            
-           {!user && (
-             <button 
-               type="button" 
-               onClick={handleSignIn} 
-               disabled={isSigningIn}
-               className="w-full mb-4 bg-white dark:bg-zinc-800 border dark:border-zinc-700 py-3 rounded-2xl flex items-center justify-center gap-3 font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-             >
-               <img src={googleIcon} className="w-5 h-5 object-contain" alt="Google" /> 
-               {isSigningIn ? 'Loading...' : t.signIn}
-             </button>
-           )}
-           
-           {user && (
-             <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-between">
-               <div className="flex items-center gap-2">
-                 <span className="text-sm">✅ {user.email}</span>
-               </div>
-               <button 
-                 type="button" 
-                 onClick={handleSignOut}
-                 className="text-xs text-red-600 dark:text-red-400 font-bold"
-               >
-                 {t.signOut}
-               </button>
-             </div>
-           )}
-           
+           {/* User Info সেকশন */}
+{user ? (
+  <div className="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/20">
+    {/* ... প্রোফাইল ইনফো ... */}
+    <button 
+      onClick={async () => {
+        await triggerHaptic(); // এখানে যোগ করলাম
+        handleSignOut();
+      }}
+      className="w-full bg-red-500 text-white py-3 rounded-2xl font-bold text-sm"
+    >
+      {t.signOut}
+    </button>
+  </div>
+) : (
+  <div className="bg-zinc-50 dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-100 dark:border-zinc-800">
+    <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">Sign in to sync your data across devices</p>
+    <button 
+      onClick={async () => {
+        await triggerHaptic(); // এখানে যোগ করলাম
+        handleSignIn();
+      }}
+      disabled={isSigningIn}
+      className="w-full bg-white dark:bg-zinc-800 border dark:border-zinc-700 py-3 rounded-2xl flex items-center justify-center gap-3 font-bold shadow-sm disabled:opacity-50"
+    >
+      <img src={googleIcon} className="w-5 h-5 object-contain" alt="Google" /> 
+      {isSigningIn ? 'Loading...' : t.signIn}
+    </button>
+  </div>
+)}
+
            <input required name="name" placeholder="Bike Name" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
            <div className="grid grid-cols-2 gap-4">
             <input required name="model" placeholder="Model" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
@@ -335,9 +423,28 @@ useEffect(() => {
     );
   }
 
+
+
   // ✅ MAIN APP SCREEN
   return (
     <div className="min-h-screen pb-28 max-w-lg mx-auto bg-gray-50 dark:bg-zinc-950 font-sans transition-colors relative">
+      {isInitialLoading && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white dark:bg-zinc-950">
+          <div className="w-48 h-48">
+            <Lottie animationData={gearsAnim} loop={true} />
+          </div>
+          <p className="mt-4 text-zinc-400 font-bold animate-pulse text-sm">লোড হচ্ছে...</p>
+        </div>
+      )}
+
+      {showSuccess && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/30 dark:bg-black/30 backdrop-blur-sm pointer-events-none">
+        <div className="w-64 h-64">
+          <Lottie animationData={successAnim} loop={false} />
+        </div>
+      </div>
+    )}
+    
       <header className="sticky top-0 z-30 bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-lg px-6 pt-6 pb-2 flex flex-col gap-2">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-black text-primary-600 italic">{t.appName}</h1>
@@ -517,34 +624,59 @@ useEffect(() => {
         {activeTab === 'logs' && activeBike && (
   <div className="space-y-4 pb-10">
     <h2 className="text-xl font-black">{t.logs}</h2>
-    {[...activeBike.fuelLogs.map(l => ({...l, type: 'FUEL'})), ...activeBike.oilLogs.map(l => ({...l, type: 'OIL'})), ...activeBike.maintenanceLogs.map(l => ({...l, type: 'MAINT'}))]
-      .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .map(log => {
-        const isFuel = log.type === 'FUEL';
-        return (
-          <div key={log.id} className="bg-white dark:bg-zinc-900 p-5 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
-            {/* উপরের ছোট ট্যাগ */}
-            <div className={`absolute top-0 left-0 px-4 py-1 rounded-br-2xl text-[10px] font-black uppercase ${isFuel ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
-              {isFuel ? 'Fueling' : log.type}
-            </div>
-            
-            <div className="flex justify-between items-center mt-4">
-              <div className="flex flex-col">
-                <span className="text-3xl font-black text-zinc-800 dark:text-zinc-100">
-                  {isFuel ? (log as any).liters : (log as any).cost}
-                  <small className="text-sm ml-1 font-bold text-zinc-400">{isFuel ? 'L' : currencySymbol}</small>
-                </span>
-                <span className="text-[11px] font-bold text-zinc-400 mt-1">at {log.odo.toLocaleString()} km on {log.date}</span>
+    
+    {/* এখানে চেক করা হচ্ছে ৩ ধরণের লগের যোগফল ০ কি না */}
+    {(activeBike.fuelLogs.length + activeBike.oilLogs.length + activeBike.maintenanceLogs.length) === 0 ? (
+      
+      /* --- ১. যদি কোনো লগ না থাকে (Ghost Animation) --- */
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="w-48 h-48 opacity-50">
+          <Lottie animationData={ghostAnim} loop={true} />
+        </div>
+        <p className="text-zinc-400 font-bold mt-4 text-center">
+          কোনো হিসাব পাওয়া যায়নি!<br/>
+          <span className="text-[10px] font-medium">নিচের + বাটনে ক্লিক করে খরচ যোগ করুন</span>
+        </p>
+      </div>
+
+    ) : (
+      /* --- ২. যদি লগ থাকে তবে আগের লিস্ট --- */
+      [...activeBike.fuelLogs.map(l => ({...l, type: 'FUEL'})), ...activeBike.oilLogs.map(l => ({...l, type: 'OIL'})), ...activeBike.maintenanceLogs.map(l => ({...l, type: 'MAINT'}))]
+        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .map(log => {
+          const isFuel = log.type === 'FUEL';
+          return (
+            <div key={log.id} className="bg-white dark:bg-zinc-900 p-5 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
+              {/* উপরের ছোট ট্যাগ */}
+              <div className={`absolute top-0 left-0 px-4 py-1 rounded-br-2xl text-[10px] font-black uppercase ${isFuel ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
+                {isFuel ? 'Fueling' : log.type}
               </div>
               
-              <div className="flex flex-col items-end gap-1">
-                <p className="font-black text-primary-600 text-lg">-{currencySymbol}{((log as any).totalCost || (log as any).cost || 0).toFixed(0)}</p>
-                <button onClick={() => deleteLog(log.id, log.type)} className="p-2 bg-zinc-50 dark:bg-zinc-800 rounded-full hover:bg-red-50 text-xs">🗑️</button>
+              <div className="flex justify-between items-center mt-4">
+                <div className="flex flex-col">
+                  <span className="text-3xl font-black text-zinc-800 dark:text-zinc-100">
+                    {isFuel ? (log as any).liters : (log as any).cost}
+                    <small className="text-sm ml-1 font-bold text-zinc-400">{isFuel ? 'L' : currencySymbol}</small>
+                  </span>
+                  <span className="text-[11px] font-bold text-zinc-400 mt-1">at {log.odo.toLocaleString()} km on {log.date}</span>
+                </div>
+                
+                <div className="flex flex-col items-end gap-1">
+                  <p className="font-black text-primary-600 text-lg">-{currencySymbol}{((log as any).totalCost || (log as any).cost || 0).toFixed(0)}</p>
+                  <button onClick={() => {
+                      triggerHaptic(); // হ্যাপটিক অ্যাড করা হলো
+                      deleteLog(log.id, log.type);
+                    }} 
+                    className="p-2 bg-zinc-50 dark:bg-zinc-800 rounded-full hover:bg-red-50 text-xs"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+    )}
   </div>
 )}
 
@@ -743,7 +875,7 @@ useEffect(() => {
           <form onSubmit={handleSaveMaint} className="bg-white dark:bg-zinc-900 w-full max-w-md p-8 rounded-[2.5rem] space-y-4">
             <h2 className="text-xl font-black uppercase text-primary-600 mb-4">🔧 {t.addService}</h2>
             <input required name="odo" type="number" placeholder="Odometer" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" defaultValue={stats?.currentOdo} />
-            <input required name="partName" placeholder="What was serviced? (e.g. Chain, Brake)" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
+            <input required name="partName" placeholder="What was serviced?" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
             <div className="grid grid-cols-2 gap-4">
               <input required name="cost" type="number" placeholder="Parts Cost" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
               <input required name="laborCost" type="number" placeholder="Labor Cost" className="w-full bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 font-bold outline-none" />
