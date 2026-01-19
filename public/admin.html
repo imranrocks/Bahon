@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bahon | Ultimate Admin Control</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        
+        :root {
+            --primary: #1A1B41;
+            --accent: #6366f1;
+        }
+
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #F8FAFC; 
+            overflow-x: hidden;
+        }
+
+        /* Responsive Sidebar */
+        .sidebar { 
+            background: var(--primary); 
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+            z-index: 100;
+        }
+        
+        @media (max-width: 1024px) {
+            .sidebar { 
+                position: fixed; 
+                left: -100%; 
+                height: 100vh; 
+                width: 280px; 
+            }
+            .sidebar.active { left: 0; box-shadow: 20px 0 50px rgba(0,0,0,0.3); }
+        }
+
+        .nav-link { 
+            color: #A0AEC0; 
+            transition: all 0.2s; 
+            border-radius: 16px; 
+            font-weight: 600;
+        }
+        .nav-link:hover, .nav-link.active { 
+            background: rgba(255, 255, 255, 0.1); 
+            color: white; 
+        }
+
+        /* Glassmorphism & Cards */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 32px;
+        }
+
+        .stat-card {
+            border-radius: 28px;
+            transition: all 0.3s ease;
+            background: white;
+            border: 1px solid #F1F5F9;
+        }
+        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,0,0,0.05); }
+
+        /* Custom Scroll */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+
+        .hidden-section { display: none !important; }
+        
+        .ping-ani { animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        @keyframes ping { 75%, 100% { transform: scale(2.5); opacity: 0; } }
+
+        /* Table Responsiveness */
+        .table-wrapper { 
+            overflow-x: auto; 
+            -webkit-overflow-scrolling: touch; 
+        }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div id="login-section" class="flex items-center justify-center min-h-screen bg-slate-50 p-6">
+        <div class="bg-white p-10 md:p-14 rounded-[3rem] shadow-2xl w-full max-w-md text-center border border-slate-100">
+            <div class="w-24 h-24 bg-indigo-50 rounded-[2.2rem] flex items-center justify-center mx-auto mb-8 text-4xl shadow-inner animate-bounce">🛡️</div>
+            <h2 class="text-3xl font-black mb-2 tracking-tight">Bahon <span class="text-indigo-600">Admin</span></h2>
+            <p class="text-slate-400 text-sm mb-10 font-bold uppercase tracking-[0.2em]">Restricted Access</p>
+            
+            <button onclick="login()" class="w-full flex items-center justify-center gap-4 bg-slate-900 text-white py-5 rounded-2xl font-bold hover:bg-black transition-all transform hover:scale-[1.02] shadow-xl">
+                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" width="22"> Login with Google
+            </button>
+            <p id="error-msg" class="mt-6 text-red-500 text-xs font-black bg-red-50 py-3 rounded-xl hidden"></p>
+        </div>
+    </div>
+
+    <div id="dashboard-section" class="hidden-section flex flex-col lg:flex-row min-h-screen overflow-hidden">
+        
+        <aside id="sidebar-menu" class="sidebar w-72 flex-shrink-0 flex flex-col p-8 lg:relative fixed inset-y-0 shadow-2xl lg:shadow-none">
+            <div class="flex items-center justify-between mb-12 px-2">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                        <i class="fas fa-motorcycle text-white"></i>
+                    </div>
+                    <h1 class="text-white font-bold text-2xl italic tracking-tighter">bahon<span class="text-indigo-400">.</span></h1>
+                </div>
+                <button onclick="toggleSidebar()" class="lg:hidden text-white/50 text-2xl hover:text-white transition">&times;</button>
+            </div>
+
+            <nav class="space-y-3 flex-1">
+                <a href="#" class="nav-link active flex items-center gap-4 px-5 py-4 text-sm">
+                    <i class="fas fa-th-large w-5 text-lg"></i> Overview
+                </a>
+                <a href="#" class="nav-link flex items-center gap-4 px-5 py-4 text-sm opacity-60">
+                    <i class="fas fa-users w-5 text-lg"></i> User Registry
+                </a>
+                <a href="#" class="nav-link flex items-center gap-4 px-5 py-4 text-sm opacity-60">
+                    <i class="fas fa-chart-line w-5 text-lg"></i> Performance
+                </a>
+                <div class="pt-8 border-t border-white/5 mt-4">
+                    <p class="text-[10px] text-white/20 font-black uppercase tracking-widest mb-4">System</p>
+                    <a href="#" class="nav-link flex items-center gap-4 px-5 py-4 text-sm opacity-60">
+                        <i class="fas fa-cog w-5 text-lg"></i> Settings
+                    </a>
+                </div>
+            </nav>
+
+            <div class="mt-auto">
+                <button onclick="logout()" class="w-full flex items-center gap-4 px-5 py-4 text-sm font-bold text-red-400 hover:bg-red-500/10 rounded-2xl transition">
+                    <i class="fas fa-power-off w-5"></i> Sign Out
+                </button>
+            </div>
+        </aside>
+
+        <main class="flex-1 p-4 md:p-8 lg:p-10 overflow-y-auto relative">
+            
+            <div class="lg:hidden flex justify-between items-center mb-6 bg-white p-4 rounded-3xl shadow-sm border border-slate-100">
+                <button onclick="toggleSidebar()" class="w-12 h-12 bg-slate-50 rounded-2xl text-slate-600 shadow-inner">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="text-center">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Dashboard</span>
+                    <span class="font-black text-indigo-600 italic">BAHON</span>
+                </div>
+                <div id="admin-avatar-mobile" class="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600 font-bold">
+                    A
+                </div>
+            </div>
+
+            <header class="hidden lg:flex justify-between items-center mb-10">
+                <div>
+                    <h2 class="text-3xl font-black text-slate-800 tracking-tighter italic">Admin <span class="text-indigo-600">Console</span></h2>
+                    <p class="text-slate-400 text-[11px] font-bold uppercase tracking-widest mt-1">Live Management & Analytics</p>
+                </div>
+                
+                <div class="flex items-center gap-6">
+                    <div class="flex items-center gap-3 bg-emerald-50 px-5 py-3 rounded-2xl border border-emerald-100">
+                        <span class="relative flex h-2.5 w-2.5">
+                            <span class="ping-ani absolute h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                        </span>
+                        <span id="active-admin-count" class="text-[10px] font-black text-emerald-700 uppercase italic">1 Admin Online</span>
+                    </div>
+
+                    <button onclick="exportToCSV()" class="bg-white text-slate-600 px-6 py-3 rounded-2xl text-xs font-black border border-slate-100 hover:bg-slate-50 transition shadow-sm">
+                        <i class="fas fa-cloud-download-alt mr-2 text-indigo-500"></i> EXPORT CSV
+                    </button>
+                    
+                    <div class="flex items-center gap-4 bg-slate-100/50 p-2 pr-5 rounded-3xl border border-white">
+                        <div id="admin-photo" class="w-11 h-11 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold shadow-lg">?</div>
+                        <div class="flex flex-col">
+                            <span id="admin-name" class="text-xs font-black text-slate-900">Admin</span>
+                            <span id="header-email" class="text-[10px] text-slate-400 font-bold">---</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8 md:mb-10">
+                <div class="stat-card p-6 md:p-7 bg-indigo-600 text-white border-none shadow-xl shadow-indigo-200">
+                    <p class="text-[10px] font-bold uppercase tracking-widest opacity-60 mb-2">Total Users</p>
+                    <h4 id="total-users" class="text-3xl font-black italic">0</h4>
+                </div>
+                <div class="stat-card p-6 md:p-7"><p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Logs</p><h4 id="total-count" class="text-3xl font-black italic">0</h4></div>
+                <div class="stat-card p-6 md:p-7"><p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Fuel Used</p><h4 id="total-liters" class="text-3xl font-black italic">0 <span class="text-sm">L</span></h4></div>
+                <div class="stat-card p-6 md:p-7"><p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Expenses</p><h4 id="total-cost" class="text-3xl font-black italic text-indigo-600">0 <span class="text-xs tracking-normal">TK</span></h4></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+                <div class="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                    <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-400 italic mb-8">User Engagement Trends</h3>
+                    <div class="h-64">
+                        <canvas id="activityChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-indigo-900 p-8 rounded-[2.5rem] shadow-2xl flex flex-col text-white">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-[11px] font-black uppercase tracking-widest text-indigo-300">Global Broadcast</h3>
+                        <i class="fas fa-paper-plane text-indigo-400"></i>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <input type="text" id="notifTitle" placeholder="Broadcast Title" class="w-full bg-white/10 border border-white/10 rounded-2xl p-4 text-xs font-bold outline-none placeholder:text-white/30 focus:bg-white/20 transition">
+                        <textarea id="notifBody" placeholder="Type message for all users..." class="w-full bg-white/10 border border-white/10 rounded-2xl p-4 text-xs font-medium outline-none h-28 placeholder:text-white/30 focus:bg-white/20 transition"></textarea>
+                        <button onclick="sendGlobalNotification()" class="w-full bg-indigo-500 text-white py-4 rounded-2xl text-[11px] font-black uppercase hover:bg-indigo-400 shadow-lg transition-all active:scale-95">
+                            Push Notification
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden mb-12">
+                <div class="p-6 md:p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/30">
+                    <h3 class="font-black text-slate-800 italic text-sm">System Live Feed</h3>
+                    <div class="relative w-full md:w-80">
+                        <i class="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+                        <input type="text" id="searchInput" onkeyup="searchTable()" placeholder="Search user or action..." class="w-full bg-white border border-slate-200 pl-12 pr-6 py-3 rounded-2xl text-[11px] font-bold outline-none focus:ring-4 focus:ring-indigo-50/50 transition-all">
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="w-full text-left min-w-[600px] border-separate border-spacing-0">
+                        <thead>
+                            <tr class="text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] bg-slate-50/50">
+                                <th class="px-8 py-5">User & Context</th>
+                                <th class="px-8 py-5">Vehicle Details</th>
+                                <th class="px-8 py-5">Transaction</th>
+                                <th class="px-8 py-5 text-right">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-table" class="divide-y divide-slate-50">
+                            </tbody>
+                    </table>
+                </div>
+                <div id="empty-state" class="hidden p-20 text-center">
+                    <div class="text-4xl mb-4">🔍</div>
+                    <p class="text-slate-400 font-bold text-sm">No records found matching your search.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="userModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[500] flex items-end md:items-center justify-center p-0 md:p-6 transition-all">
+        <div class="bg-white rounded-t-[3rem] md:rounded-[3.5rem] w-full max-w-2xl p-8 md:p-12 shadow-2xl relative transform transition-all translate-y-0">
+            <button onclick="closeModal()" class="absolute right-8 top-8 w-12 h-12 bg-slate-50 text-slate-400 rounded-full hover:bg-red-50 hover:text-red-500 transition-all font-bold text-2xl flex items-center justify-center">&times;</button>
+            <div id="modalContent">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        // FIREBASE CONFIGURATION
+        const firebaseConfig = {
+            apiKey: "AIzaSyCLmMAyjxYUCBK3h8lgSU_1-rIRfdGnJWw",
+            authDomain: "bahon-imranlabs.firebaseapp.com",
+            projectId: "bahon-imranlabs",
+            storageBucket: "bahon-imranlabs.firebasestorage.app",
+            messagingSenderId: "957277842201",
+            appId: "1:957277842201:android:7866c3022916a166cab388"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const provider = new firebase.auth.GoogleAuthProvider();
+
+        // 🛡️ ADMIN ACCESS LIST
+        const ALLOWED_ADMINS = [
+            "innocentboyimran0@gmail.com", 
+            "hyperff94@gmail.com"
+        ];
+
+        let allRecords = [];
+        let userActivityMap = {};
+
+        // --- AUTHENTICATION ---
+        function login() { auth.signInWithPopup(provider); }
+        
+        async function logout() { 
+            const user = auth.currentUser;
+            if(user) await db.collection('online_admins').doc(user.uid).delete();
+            auth.signOut().then(() => location.reload()); 
+        }
+
+        auth.onAuthStateChanged(async user => {
+            const loginSection = document.getElementById('login-section');
+            const dashSection = document.getElementById('dashboard-section');
+            const errorMsg = document.getElementById('error-msg');
+
+            if (user) {
+                if (ALLOWED_ADMINS.includes(user.email)) {
+                    loginSection.classList.add('hidden-section');
+                    dashSection.classList.remove('hidden-section');
+                    
+                    // Header Update
+                    document.getElementById('header-email').innerText = user.email;
+                    document.getElementById('admin-name').innerText = user.displayName;
+                    if(user.photoURL) {
+                        const img = `<img src="${user.photoURL}" class="rounded-2xl w-full h-full object-cover">`;
+                        document.getElementById('admin-photo').innerHTML = img;
+                        document.getElementById('admin-avatar-mobile').innerHTML = img;
+                    }
+
+                    // Online Presence
+                    db.collection('online_admins').doc(user.uid).set({
+                        name: user.displayName,
+                        email: user.email,
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // Live Listeners
+                    listenAdmins();
+                    loadLiveRecords();
+                    initEngangementChart();
+                } else {
+                    errorMsg.innerText = "Access Denied: You are not an admin.";
+                    errorMsg.classList.remove('hidden');
+                    setTimeout(() => auth.signOut(), 3000);
+                }
+            } else {
+                dashSection.classList.add('hidden-section');
+                loginSection.classList.remove('hidden-section');
+            }
+        });
+
+        // --- DATA ENGINE ---
+        function loadLiveRecords() {
+            db.collection('master_records').orderBy('createdAt', 'desc').onSnapshot(snap => {
+                allRecords = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                if(allRecords.length === 0) {
+                    document.getElementById('empty-state').classList.remove('hidden');
+                } else {
+                    document.getElementById('empty-state').classList.add('hidden');
+                }
+
+                calculateStats();
+                renderTable(allRecords);
+            }, err => {
+                console.error("Firestore Error:", err);
+            });
+        }
+
+        function calculateStats() {
+            let totalCost = 0;
+            let totalLiters = 0;
+            let uniqueUsers = new Set();
+            userActivityMap = {};
+
+            allRecords.forEach(rec => {
+                uniqueUsers.add(rec.userEmail);
+                totalCost += Number(rec.totalCost || rec.cost || 0);
+                totalLiters += Number(rec.liters || 0);
+
+                if(!userActivityMap[rec.userEmail]) {
+                    userActivityMap[rec.userEmail] = {
+                        name: rec.userName || 'Anonymous',
+                        logs: [],
+                        totalSpent: 0
+                    };
+                }
+                userActivityMap[rec.userEmail].logs.push(rec);
+                userActivityMap[rec.userEmail].totalSpent += Number(rec.totalCost || rec.cost || 0);
+            });
+
+            document.getElementById('total-users').innerText = uniqueUsers.size;
+            document.getElementById('total-count').innerText = allRecords.length;
+            document.getElementById('total-liters').innerText = totalLiters.toFixed(1);
+            document.getElementById('total-cost').innerText = totalCost.toLocaleString();
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('data-table');
+            tbody.innerHTML = '';
+
+            data.forEach(r => {
+                const timestamp = r.createdAt ? new Date(r.createdAt.seconds * 1000).toLocaleString('en-GB', { 
+                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
+                }) : 'Just now';
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50/80 transition-all cursor-pointer group" onclick="openUserModal('${r.userEmail}')">
+                        <td class="px-8 py-5">
+                            <div class="text-xs font-black text-slate-800">${r.userName || 'User'}</div>
+                            <div class="text-[9px] font-black text-indigo-500 uppercase tracking-tighter mt-1">${r.category}</div>
+                        </td>
+                        <td class="px-8 py-5 text-xs font-bold text-slate-500">
+                            ${r.bikeName || '<span class="text-slate-300">N/A</span>'}
+                        </td>
+                        <td class="px-8 py-5">
+                            <div class="text-xs font-black text-slate-900">${r.totalCost || r.cost || 0} <span class="text-[10px]">TK</span></div>
+                            <div class="text-[9px] text-slate-400 font-bold uppercase">${r.liters ? r.liters + ' Liters' : 'General'}</div>
+                        </td>
+                        <td class="px-8 py-5 text-right">
+                            <span class="text-[10px] font-black text-slate-300 uppercase">${timestamp}</span>
+                        </td>
+                    </tr>`;
+            });
+        }
+
+        // --- FEATURES ---
+        async function sendGlobalNotification() {
+            const title = document.getElementById('notifTitle').value;
+            const body = document.getElementById('notifBody').value;
+            
+            if(!title || !body) return alert("Please enter both title and message.");
+
+            try {
+                await db.collection('notifications').add({
+                    title: title,
+                    body: body,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    sender: auth.currentUser.email
+                });
+                alert("📣 Broadcast Success! Notification sent to all users.");
+                document.getElementById('notifTitle').value = "";
+                document.getElementById('notifBody').value = "";
+            } catch (e) {
+                alert("Error sending notification: " + e.message);
+            }
+        }
+
+        function searchTable() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = allRecords.filter(r => 
+                (r.userName && r.userName.toLowerCase().includes(query)) || 
+                (r.category && r.category.toLowerCase().includes(query)) ||
+                (r.bikeName && r.bikeName.toLowerCase().includes(query))
+            );
+            renderTable(filtered);
+            
+            const empty = document.getElementById('empty-state');
+            filtered.length === 0 ? empty.classList.remove('hidden') : empty.classList.add('hidden');
+        }
+
+        function exportToCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,User,Category,Vehicle,Liters,Cost,Date\n";
+            allRecords.forEach(r => {
+                const date = r.createdAt ? new Date(r.createdAt.seconds*1000).toISOString().split('T')[0] : 'N/A';
+                csvContent += `"${r.userName}","${r.category}","${r.bikeName}","${r.liters || 0}","${r.totalCost || r.cost || 0}","${date}"\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Bahon_Report_${new Date().toLocaleDateString()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+        }
+
+        function openUserModal(email) {
+            const userData = userActivityMap[email];
+            if(!userData) return;
+
+            const modalContent = document.getElementById('modalContent');
+            modalContent.innerHTML = `
+                <div class="flex items-center gap-6 mb-8">
+                    <div class="w-16 h-16 bg-indigo-600 rounded-[1.5rem] flex items-center justify-center text-white text-2xl font-black shadow-lg">
+                        ${userData.name.charAt(0)}
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-black text-slate-900 italic">${userData.name}</h2>
+                        <p class="text-indigo-500 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">${email}</p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 mb-8">
+                    <div class="bg-slate-50 p-5 rounded-3xl border border-slate-100">
+                        <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Total Logs</p>
+                        <p class="text-xl font-black">${userData.logs.length}</p>
+                    </div>
+                    <div class="bg-slate-50 p-5 rounded-3xl border border-slate-100">
+                        <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Lifetime Spent</p>
+                        <p class="text-xl font-black text-indigo-600">${userData.totalSpent} <span class="text-xs">TK</span></p>
+                    </div>
+                </div>
+
+                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic">Action History</h4>
+                <div class="max-h-80 overflow-y-auto custom-scroll pr-4 space-y-3">
+                    ${userData.logs.map(l => `
+                        <div class="bg-white p-5 rounded-3xl border border-slate-100 flex justify-between items-center hover:border-indigo-100 transition">
+                            <div>
+                                <p class="text-xs font-black text-slate-800">${l.category}</p>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase">${l.bikeName || 'General Record'}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs font-black text-slate-800">${l.totalCost || l.cost || 0} TK</p>
+                                <p class="text-[9px] font-bold text-slate-300 uppercase">${l.createdAt ? new Date(l.createdAt.seconds*1000).toLocaleDateString() : ''}</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+            
+            document.getElementById('userModal').classList.remove('hidden');
+        }
+
+        function closeModal() { document.getElementById('userModal').classList.add('hidden'); }
+        function toggleSidebar() { document.getElementById('sidebar-menu').classList.toggle('active'); }
+
+        // --- ADMIN ONLINE TRACKING ---
+        function listenAdmins() {
+            db.collection('online_admins').onSnapshot(snap => {
+                const count = snap.size;
+                document.getElementById('active-admin-count').innerText = `${count} Admin${count > 1 ? 's' : ''} Online`;
+            });
+        }
+
+        // --- CHARTING ---
+        function initEngangementChart() {
+            const ctx = document.getElementById('activityChart').getContext('2d');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(99, 102, 241, 0.2)');
+            gradient.addColorStop(1, 'rgba(99, 102, 241, 0)');
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Log Activity',
+                        data: [15, 25, 18, 42, 35, 60, 48],
+                        borderColor: '#6366f1',
+                        backgroundColor: gradient,
+                        borderWidth: 4,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { display: false },
+                        x: { 
+                            grid: { display: false },
+                            ticks: { font: { size: 10, weight: '700' }, color: '#94a3b8' } 
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

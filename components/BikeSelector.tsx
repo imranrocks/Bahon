@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Bike } from '../types';
+import { Bike } from '../src/types';
 
 interface Props {
   bikes: Bike[];
