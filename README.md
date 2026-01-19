@@ -35,7 +35,7 @@
 
 কবে, কোথা থেকে, কত লিটার তেল নিয়েছেন—সব থাকবে তারিখসহ সেভ।
 
-![Add Log](https://github.com/imranrocks/Bahon/blob/main/screenshots/add.jpg?raw=true)
+![Add Log](https://github.com/imranrocks/Bahon/blob/main/screenshots/fuel.jpg?raw=true)
 
 ---
 
