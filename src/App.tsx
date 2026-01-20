@@ -624,22 +624,17 @@ useEffect(() => {
   <div className="space-y-4 pb-10">
     <h2 className="text-xl font-black">{t.logs}</h2>
     
-    {/* এখানে চেক করা হচ্ছে ৩ ধরণের লগের যোগফল ০ কি না */}
     {(activeBike.fuelLogs.length + activeBike.oilLogs.length + activeBike.maintenanceLogs.length) === 0 ? (
-      
-      /* --- ১. যদি কোনো লগ না থাকে (Ghost Animation) --- */
       <div className="flex flex-col items-center justify-center py-20">
         <div className="w-48 h-48 opacity-50">
           <Lottie animationData={ghost} loop={true} />
         </div>
         <p className="text-zinc-400 font-bold mt-4 text-center">
-          কোনো হিসাব পাওয়া যায়নি!<br/>
+          কোনো হিসাব পাওয়া যায়নি!<br/>
           <span className="text-[10px] font-medium">নিচের + বাটনে ক্লিক করে খরচ যোগ করুন</span>
         </p>
       </div>
-
     ) : (
-      /* --- ২. যদি লগ থাকে তবে আগের লিস্ট --- */
       <div className="space-y-1">
         {[
           ...activeBike.fuelLogs.map(l => ({ ...l, type: 'FUEL' })),
@@ -650,15 +645,21 @@ useEffect(() => {
           .map((log, index, sortedLogs) => {
             const isFuel = log.type === 'FUEL';
 
-            // মাইলেজ ক্যালকুলেশন
-            const prevFuelLog = isFuel ? sortedLogs.slice(index + 1).find(l => l.type === 'FUEL') : null;
-            const distance = (isFuel && prevFuelLog && log.odo && prevFuelLog.odo) ? (log.odo - prevFuelLog.odo) : null;
-            const mileage = (distance && (log as any).liters) ? (distance / (log as any).liters).toFixed(1) : null;
+            // ১. লুক-অ্যাহেড: এই লগের পরে (ভবিষ্যতে) কোন ফুয়েল লগ আছে?
+            const nextFuelLog = isFuel ? sortedLogs.slice(0, index).reverse().find(l => l.type === 'FUEL') : null;
+            
+            // ২. দূরত্ব: (পরের ওডো - এই ওডো)
+            const distance = (isFuel && nextFuelLog && nextFuelLog.odo && log.odo) ? (nextFuelLog.odo - log.odo) : null;
+            
+            // ৩. মাইলেজ: আপনার অরিজিনাল ক্যালকুলেশন (পরের ওডো - এই ওডো) / পরের লগের লিটার
+            // কারণ হাসান পাম্পে গিয়ে যে ওডো পেয়েছেন, সেই দূরত্ব অতিক্রম হয়েছে নীলক্ষেতের তেল দিয়ে
+            const mileage = (distance && distance > 0 && nextFuelLog && (nextFuelLog as any).liters) 
+              ? (distance / (nextFuelLog as any).liters).toFixed(1) 
+              : null;
 
             return (
               <div key={log.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden mb-4">
                 
-                {/* ট্যাগ ও স্টেশনের নাম */}
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-2">
                     <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase ${isFuel ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
@@ -671,7 +672,6 @@ useEffect(() => {
                     )}
                   </div>
                   
-                  {/* ডিলিট বাটন */}
                   <button onClick={() => {
                       triggerHaptic();
                       deleteLog(log.id, log.type);
@@ -682,7 +682,6 @@ useEffect(() => {
                   </button>
                 </div>
 
-                {/* ডাটা পার্ট */}
                 <div className="flex justify-between items-end mb-4">
                   <div className="flex flex-col">
                     <span className="text-3xl font-black text-zinc-800 dark:text-zinc-100">
@@ -700,13 +699,13 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {/* মাইলেজ বক্স */}
+                {/* মাইলেজ বক্স এখন নীলক্ষেত লগের নিচে ৪২.৯ দেখাবে */}
                 {isFuel && mileage && Number(mileage) > 0 && (
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-800/30 flex justify-between items-center mt-2">
                     <div className="flex flex-col">
                       <p className="text-[9px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Mileage Insight</p>
                       <p className="text-[10px] font-bold text-emerald-600/60 leading-none mt-1">
-                        Last {distance} km drive
+                        Driven {distance} km with this fuel
                       </p>
                     </div>
                     <p className="text-xl font-black text-emerald-700 dark:text-emerald-400 leading-none">
@@ -716,7 +715,7 @@ useEffect(() => {
                 )}
               </div>
             );
-            })}
+          })}
       </div>
     )}
   </div>
