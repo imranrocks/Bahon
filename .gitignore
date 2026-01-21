@@ -28,3 +28,7 @@ node_modules
 build
 dist
 android/app/google-services.json
+app.tsx
+firebase.ts
+index.html
+public/
